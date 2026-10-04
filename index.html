@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CRM Prospection ESN</title>
+  <link rel="stylesheet" href="src/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>CRM Prospection ESN</h1>
+      <p class="subtitle">Diagnostic de recrutement — suivi société · taille vérifiée · signal · message · réponse</p>
+    </div>
+    <div class="actions">
+      <button id="btn-add" class="primary">+ Nouvelle société</button>
+      <button id="btn-export">Exporter CSV</button>
+      <label class="button">Importer CSV<input type="file" id="file-import" accept=".csv,text/csv" hidden></label>
+      <button id="btn-backup" title="Sauvegarde complète (JSON)">Sauvegarde</button>
+      <label class="button" title="Restaurer une sauvegarde JSON">Restaurer<input type="file" id="file-restore" accept=".json,application/json" hidden></label>
+      <button id="btn-settings">Réglages</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="kpis" id="kpis"></section>
+
+    <section class="grid-2">
+      <div class="card">
+        <h2>Pipeline</h2>
+        <div id="funnel"></div>
+      </div>
+      <div class="card">
+        <h2>Actions du jour</h2>
+        <div id="todo"></div>
+      </div>
+    </section>
+
+    <section class="grid-2">
+      <div class="card">
+        <h2>Réponse par type de signal</h2>
+        <div id="by-signal"></div>
+      </div>
+      <div class="card">
+        <h2>Réponse par canal</h2>
+        <div id="by-channel"></div>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="table-head">
+        <h2>Sociétés <span id="count" class="muted"></span></h2>
+        <div class="filters">
+          <input type="search" id="f-search" placeholder="Rechercher (société, contact, ville…)">
+          <select id="f-status"><option value="">Tous les statuts</option></select>
+          <select id="f-signal"><option value="">Tous les signaux</option></select>
+          <select id="f-response"><option value="">Toutes les réponses</option></select>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table id="table">
+          <thead>
+            <tr>
+              <th data-sort="company">Société</th>
+              <th data-sort="headcount">Taille vérifiée</th>
+              <th data-sort="signalType">Signal</th>
+              <th data-sort="contactName">Contact</th>
+              <th data-sort="messageSentAt">Message envoyé</th>
+              <th data-sort="response">Réponse</th>
+              <th data-sort="status">Statut</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <p id="empty" class="empty" hidden>
+          Aucune société pour l'instant. Cliquez sur « + Nouvelle société » ou importez un CSV
+          (modèle : <a href="data/modele-import.csv" download>modele-import.csv</a>).
+        </p>
+      </div>
+    </section>
+  </main>
+
+  <!-- Fiche société -->
+  <dialog id="dlg-prospect">
+    <form id="form-prospect" method="dialog">
+      <h2 id="dlg-title">Société</h2>
+      <input type="hidden" name="id">
+
+      <fieldset>
+        <legend>1. Société</legend>
+        <label>Nom *<input name="company" required></label>
+        <label>Site web<input name="website" type="url" placeholder="https://"></label>
+        <label>Ville<input name="city"></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>2. Taille vérifiée</legend>
+        <label>Effectif<input name="headcount" type="number" min="0"></label>
+        <label>Source<select name="sizeSource" data-options="SIZE_SOURCES"></select></label>
+        <label>Vérifiée le<input name="sizeCheckedAt" type="date"></label>
+        <label class="check"><input name="sizeVerified" type="checkbox"> Taille vérifiée</label>
+        <p class="hint" id="size-hint"></p>
+      </fieldset>
+
+      <fieldset>
+        <legend>3. Signal</legend>
+        <label>Type<select name="signalType" data-options="SIGNAL_TYPES"></select></label>
+        <label>Date<input name="signalDate" type="date"></label>
+        <label class="wide">Détail<input name="signalDetail" placeholder="ex. 15 offres de dev Java ouvertes sur WTTJ"></label>
+        <label class="wide">Lien<input name="signalUrl" type="url" placeholder="https://"></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Contact</legend>
+        <label>Nom<input name="contactName"></label>
+        <label>Poste<input name="contactRole" placeholder="CEO, DRH, Resp. recrutement…"></label>
+        <label class="wide">LinkedIn / email<input name="contactUrl"></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>4. Message envoyé</legend>
+        <label>Date d'envoi<input name="messageSentAt" type="date"></label>
+        <label>Canal<select name="channel" data-options="CHANNELS"></select></label>
+        <label>Nb relances<input name="followUps" type="number" min="0"></label>
+        <label>Dernière relance<input name="lastFollowUpAt" type="date"></label>
+        <label class="wide">Message<textarea name="messageText" rows="3" placeholder="Accroche utilisée (lien avec le signal)"></textarea></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>5. Réponse</legend>
+        <label>Réponse<select name="response" data-options="RESPONSES" data-no-empty></select></label>
+        <label>Date<input name="responseAt" type="date"></label>
+        <label class="wide">Commentaire<textarea name="responseNote" rows="2"></textarea></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Notes</legend>
+        <label class="wide"><textarea name="notes" rows="2"></textarea></label>
+      </fieldset>
+
+      <div class="dlg-actions">
+        <button type="button" id="btn-delete" class="danger">Supprimer</button>
+        <span class="spacer"></span>
+        <button type="button" id="btn-cancel">Annuler</button>
+        <button type="submit" class="primary">Enregistrer</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- Réglages -->
+  <dialog id="dlg-settings">
+    <form id="form-settings" method="dialog">
+      <h2>Réglages</h2>
+      <fieldset>
+        <legend>Cible</legend>
+        <label>Effectif min.<input name="sizeMin" type="number" min="0"></label>
+        <label>Effectif max.<input name="sizeMax" type="number" min="0"></label>
+      </fieldset>
+      <fieldset>
+        <legend>Relances</legend>
+        <label>Relancer après (jours)<input name="followUpDays" type="number" min="1"></label>
+        <label>Relances max.<input name="maxFollowUps" type="number" min="0"></label>
+      </fieldset>
+      <div class="dlg-actions">
+        <button type="button" id="btn-demo">Charger des données de démo</button>
+        <span class="spacer"></span>
+        <button type="button" id="btn-settings-cancel">Annuler</button>
+        <button type="submit" class="primary">Enregistrer</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div id="toast" class="toast" hidden></div>
+
+  <script src="src/logic.js"></script>
+  <script src="src/app.js"></script>
+</body>
+</html>
