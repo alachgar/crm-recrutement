@@ -74,3 +74,17 @@ test/               tests (node --test)
 ```bash
 npm test
 ```
+
+## Charte graphique — Nova Tech Trust
+
+Les couleurs sont définies une seule fois, en variables CSS en tête de `src/styles.css` (thème clair et sombre).
+
+| Rôle | Couleur |
+|------|---------|
+| Fond des pages | `#FAF9F6` (blanc chaud) |
+| Fond sombre (mode sombre) | `#252525` |
+| Texte | `#393837` (graphite) |
+| Accent / appels à l'action | `#B37B4A` (cuivre moyen) |
+
+Police : **Montserrat** (Google Fonts, avec repli sur la police système hors ligne).
+Logos dans `assets/` : `logo-symbole.png` (en-tête, favicon) et `logo-nova-tech-trust.png` (logo complet).
