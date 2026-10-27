@@ -1,10 +1,20 @@
 {
-  "name": "crm-prospection-esn",
-  "version": "1.0.0",
+  "name": "crm-nova-tech-trust",
+  "version": "2.0.0",
   "private": true,
-  "description": "CRM de suivi de prospection des ESN pour le diagnostic de recrutement",
+  "description": "CRM Nova Tech Trust : prospection des ESN pour le diagnostic de recrutement",
   "scripts": {
-    "start": "npx --yes http-server -p 8080 -c-1 .",
+    "dev": "node server.js",
+    "start": "node server.js",
     "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "1.1.0"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.9"
+  },
+  "engines": {
+    "node": "22.x"
   }
 }

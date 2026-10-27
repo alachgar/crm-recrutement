@@ -2,7 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert');
 const fs = require('node:fs');
 const path = require('node:path');
-const C = require('../src/logic.js');
+const C = require('../public/src/logic.js');
 
 const base = (o) => C.normalize(Object.assign({ company: 'ESN Test' }, o));
 
@@ -66,7 +66,7 @@ test('CSV : aller-retour avec ; guillemets et retours ligne', () => {
 test('CSV : séparateur virgule et fichiers fournis', () => {
   assert.strictEqual(C.fromCSV('Société,Effectif\nFoo,12\n')[0].headcount, 12);
   for (const f of ['modele-import.csv', 'demo.csv']) {
-    const list = C.fromCSV(fs.readFileSync(path.join(__dirname, '..', 'data', f), 'utf8'));
+    const list = C.fromCSV(fs.readFileSync(path.join(__dirname, '..', 'public', 'data', f), 'utf8'));
     assert.ok(list.length >= 1, f);
   }
 });

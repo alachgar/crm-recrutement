@@ -1,32 +1,83 @@
-/* Interface du CRM (navigateur). La logique métier est dans logic.js (window.CRM). */
+/*
+ * Interface du CRM (navigateur). La logique métier est dans logic.js (window.CRM),
+ * les données dans la base Postgres via l'API /api (lib/router.js).
+ */
 (function () {
   'use strict';
   const C = window.CRM;
-  const STORE_KEY = 'crm-esn-prospects-v1';
-  const SETTINGS_KEY = 'crm-esn-settings-v1';
+  // Anciennes données de la version 100 % navigateur, proposées à l'import dans la base.
+  const LEGACY_KEY = 'crm-esn-prospects-v1';
+  const THEME_KEY = 'ntt-theme';
 
   const $ = (sel, el) => (el || document).querySelector(sel);
   const $$ = (sel, el) => Array.from((el || document).querySelectorAll(sel));
 
-  let prospects = load(STORE_KEY, []).map(C.normalize);
-  let settings = Object.assign({}, C.DEFAULT_SETTINGS, load(SETTINGS_KEY, {}));
+  let prospects = [];
+  let settings = Object.assign({}, C.DEFAULT_SETTINGS);
   let sort = { key: 'status', dir: 1 };
+  let started = false;
 
-  // ---------- Persistance ----------
-  function load(key, fallback) {
+  // ---------- API ----------
+  class AuthError extends Error {}
+
+  async function api(method, path, body) {
+    const opts = { method, headers: {}, credentials: 'same-origin' };
+    if (body !== undefined) {
+      opts.headers['Content-Type'] = 'application/json';
+      opts.body = JSON.stringify(body);
+    }
+    let res;
     try {
-      const raw = localStorage.getItem(key);
-      return raw ? JSON.parse(raw) : fallback;
+      res = await fetch('api/' + path, opts);
     } catch (e) {
-      return fallback;
+      throw new Error('Serveur injoignable : vérifiez votre connexion.');
+    }
+    const data = await res.json().catch(() => ({}));
+    if (res.status === 401 && path !== 'login') {
+      showLogin('Session expirée : reconnectez-vous.');
+      throw new AuthError(data.error || 'Non connecté.');
+    }
+    if (!res.ok) throw new Error(data.error || `Erreur ${res.status}`);
+    return data;
+  }
+
+  /** Exécute une action serveur et affiche l'erreur éventuelle. */
+  async function run(fn, btn) {
+    if (btn) btn.disabled = true;
+    try {
+      return await fn();
+    } catch (err) {
+      if (!(err instanceof AuthError)) toast(err.message);
+      return undefined;
+    } finally {
+      if (btn) btn.disabled = false;
     }
   }
-  function save() {
+
+  function upsertLocal(p) {
+    const idx = prospects.findIndex((x) => x.id === p.id);
+    if (idx >= 0) prospects[idx] = C.normalize(p);
+    else prospects.push(C.normalize(p));
+  }
+
+  async function loadAll() {
+    const data = await api('GET', 'bootstrap');
+    prospects = data.prospects.map(C.normalize);
+    settings = Object.assign({}, C.DEFAULT_SETTINGS, data.settings);
+    render();
+    loadRecent();
+  }
+
+  async function loadRecent() {
     try {
-      localStorage.setItem(STORE_KEY, JSON.stringify(prospects));
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+      const { activities } = await api('GET', 'activities?limit=12');
+      $('#recent').innerHTML = activities.length
+        ? `<ul class="timeline">${activities.map((a) => `<li class="k-${esc(a.kind)}">
+            <span class="tl-when">${esc(fmtDateTime(a.createdAt))}</span>
+            <a href="#" data-edit="${esc(a.prospectId)}">${esc(a.company)}</a> — ${esc(a.text)}</li>`).join('')}</ul>`
+        : '<p class="muted">Aucune activité pour l\'instant.</p>';
     } catch (e) {
-      toast('Impossible d\'enregistrer localement : pensez à exporter vos données.');
+      if (!(e instanceof AuthError)) $('#recent').innerHTML = `<p class="muted">${esc(e.message)}</p>`;
     }
   }
 
@@ -38,6 +89,11 @@
     if (!iso) return '';
     const [y, m, d] = iso.split('-');
     return d && m && y ? `${d}/${m}/${y}` : iso;
+  }
+  function fmtDateTime(iso) {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    return d.toLocaleString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   }
   function safeUrl(u) {
     return /^https?:\/\//i.test(u || '') ? u : '';
@@ -217,10 +273,44 @@
     form.elements.id.value = id || '';
     $('#dlg-title').textContent = id ? p.company : 'Nouvelle société';
     $('#btn-delete').hidden = !id;
+    $('#history').hidden = !id;
+    $('#history-list').innerHTML = '';
+    $('#note-text').value = '';
     updateSizeHint();
     dlg.showModal();
     form.elements.company.focus();
+    if (id) loadHistory(id);
   }
+
+  async function loadHistory(id) {
+    const list = $('#history-list');
+    list.innerHTML = '<li class="muted">Chargement…</li>';
+    try {
+      const { activities } = await api('GET', `prospects/${encodeURIComponent(id)}/activities`);
+      if (form.elements.id.value !== id) return;
+      list.innerHTML = activities.length
+        ? activities.map((a) => `<li class="k-${esc(a.kind)}"><span class="tl-when">${esc(fmtDateTime(a.createdAt))}</span> ${esc(a.text)}</li>`).join('')
+        : '<li class="muted">Aucun événement.</li>';
+    } catch (e) {
+      if (!(e instanceof AuthError)) list.innerHTML = `<li class="muted">${esc(e.message)}</li>`;
+    }
+  }
+
+  async function addNote() {
+    const id = form.elements.id.value;
+    const input = $('#note-text');
+    const text = input.value.trim();
+    if (!id || !text) return;
+    const ok = await run(() => api('POST', `prospects/${encodeURIComponent(id)}/activities`, { text }), $('#btn-note'));
+    if (!ok) return;
+    input.value = '';
+    loadHistory(id);
+    loadRecent();
+  }
+  $('#btn-note').addEventListener('click', addNote);
+  $('#note-text').addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); addNote(); }
+  });
 
   function updateSizeHint() {
     const n = parseInt(form.elements.headcount.value, 10);
@@ -230,7 +320,7 @@
     else hint.textContent = '✓ Dans la cible.';
   }
 
-  form.addEventListener('submit', (e) => {
+  form.addEventListener('submit', async (e) => {
     e.preventDefault();
     const data = {};
     for (const el of form.elements) {
@@ -242,30 +332,32 @@
     if (data.response !== 'Aucune' && !data.responseAt) data.responseAt = C.today();
     const dup = prospects.find((p) => p.id !== data.id && p.company.trim().toLowerCase() === data.company.trim().toLowerCase());
     if (dup && !confirm(`« ${dup.company} » existe déjà. Enregistrer quand même ?`)) return;
-    const idx = prospects.findIndex((p) => p.id === data.id);
-    if (idx >= 0) {
-      prospects[idx] = C.normalize(Object.assign({}, prospects[idx], data, { updatedAt: C.today() }));
-    } else {
-      delete data.id;
-      prospects.push(C.normalize(data));
-    }
-    save();
+    const id = data.id;
+    delete data.id;
+    const res = await run(() => (id
+      ? api('PUT', `prospects/${encodeURIComponent(id)}`, data)
+      : api('POST', 'prospects', data)), $('button[type=submit]', form));
+    if (!res) return;
+    upsertLocal(res.prospect);
     dlg.close();
     render();
+    loadRecent();
     toast('Enregistré.');
   });
 
   form.elements.headcount.addEventListener('input', updateSizeHint);
   $('#btn-cancel').addEventListener('click', () => dlg.close());
-  $('#btn-delete').addEventListener('click', () => {
+  $('#btn-delete').addEventListener('click', async () => {
     const id = form.elements.id.value;
     const p = prospects.find((x) => x.id === id);
-    if (p && confirm(`Supprimer « ${p.company} » ?`)) {
-      prospects = prospects.filter((x) => x.id !== id);
-      save();
-      dlg.close();
-      render();
-    }
+    if (!p || !confirm(`Supprimer « ${p.company} » et son historique ?`)) return;
+    const ok = await run(() => api('DELETE', `prospects/${encodeURIComponent(id)}`), $('#btn-delete'));
+    if (!ok) return;
+    prospects = prospects.filter((x) => x.id !== id);
+    dlg.close();
+    render();
+    loadRecent();
+    toast('Société supprimée.');
   });
 
   // ---------- Réglages ----------
@@ -276,37 +368,52 @@
     dlgS.showModal();
   });
   $('#btn-settings-cancel').addEventListener('click', () => dlgS.close());
-  formS.addEventListener('submit', (e) => {
+  formS.addEventListener('submit', async (e) => {
     e.preventDefault();
+    const next = {};
     for (const k of Object.keys(C.DEFAULT_SETTINGS)) {
       const v = parseInt(formS.elements[k].value, 10);
-      settings[k] = Number.isNaN(v) ? C.DEFAULT_SETTINGS[k] : v;
+      next[k] = Number.isNaN(v) ? C.DEFAULT_SETTINGS[k] : v;
     }
-    save();
+    const res = await run(() => api('PUT', 'settings', next), $('button[type=submit]', formS));
+    if (!res) return;
+    settings = Object.assign({}, C.DEFAULT_SETTINGS, res.settings);
     dlgS.close();
     render();
+    toast('Réglages enregistrés.');
   });
+
+  /** Envoie des sociétés à la base (fusion par ID ou nom de société). */
+  async function importList(list, btn) {
+    const res = await run(() => api('POST', 'import', { prospects: list }), btn);
+    if (!res) return null;
+    prospects = res.prospects.map(C.normalize);
+    render();
+    loadRecent();
+    return res;
+  }
+
   $('#btn-demo').addEventListener('click', async () => {
     if (prospects.length && !confirm('Ajouter les données de démo à vos données existantes ?')) return;
+    let list;
     try {
-      const res = await fetch('data/demo.csv');
-      const { list, added, updated } = C.merge(prospects, C.fromCSV(await res.text()));
-      prospects = list;
-      save();
-      dlgS.close();
-      render();
-      toast(`Démo : ${added} ajoutée(s), ${updated} mise(s) à jour.`);
+      list = C.fromCSV(await (await fetch('data/demo.csv')).text());
     } catch (err) {
-      toast('Impossible de charger data/demo.csv (ouvrez l\'app via un serveur local).');
+      return toast('Impossible de charger data/demo.csv.');
     }
+    const res = await importList(list, $('#btn-demo'));
+    if (!res) return;
+    dlgS.close();
+    toast(`Démo : ${res.added} ajoutée(s), ${res.updated} mise(s) à jour.`);
   });
 
   // ---------- Import / export ----------
   $('#btn-export').addEventListener('click', () => {
     download(`prospection-esn-${C.today()}.csv`, '﻿' + C.toCSV(prospects), 'text/csv;charset=utf-8');
   });
-  $('#btn-backup').addEventListener('click', () => {
-    download(`crm-esn-sauvegarde-${C.today()}.json`, JSON.stringify({ settings, prospects }, null, 2), 'application/json');
+  $('#btn-backup').addEventListener('click', async () => {
+    const data = await run(() => api('GET', 'backup'), $('#btn-backup'));
+    if (data) download(`crm-nova-tech-trust-sauvegarde-${C.today()}.json`, JSON.stringify(data, null, 2), 'application/json');
   });
   $('#file-import').addEventListener('change', async (e) => {
     const file = e.target.files[0];
@@ -314,28 +421,28 @@
     if (!file) return;
     const incoming = C.fromCSV(await file.text());
     if (!incoming.length) return toast('Aucune ligne reconnue (colonne « Société » requise).');
-    const { list, added, updated } = C.merge(prospects, incoming);
-    prospects = list;
-    save();
-    render();
-    toast(`Import : ${added} ajoutée(s), ${updated} mise(s) à jour.`);
+    const res = await importList(incoming);
+    if (res) toast(`Import : ${res.added} ajoutée(s), ${res.updated} mise(s) à jour.`);
   });
   $('#file-restore').addEventListener('change', async (e) => {
     const file = e.target.files[0];
     e.target.value = '';
     if (!file) return;
+    let data;
     try {
-      const data = JSON.parse(await file.text());
+      data = JSON.parse(await file.text());
       if (!Array.isArray(data.prospects)) throw new Error('format');
-      if (!confirm(`Remplacer les ${prospects.length} société(s) actuelles par les ${data.prospects.length} de la sauvegarde ?`)) return;
-      prospects = data.prospects.map(C.normalize);
-      settings = Object.assign({}, C.DEFAULT_SETTINGS, data.settings);
-      save();
-      render();
-      toast('Sauvegarde restaurée.');
     } catch (err) {
-      toast('Fichier de sauvegarde invalide.');
+      return toast('Fichier de sauvegarde invalide.');
     }
+    if (!confirm(`Remplacer les ${prospects.length} société(s) de la base par les ${data.prospects.length} de la sauvegarde ?`)) return;
+    const res = await run(() => api('POST', 'restore', data));
+    if (!res) return;
+    prospects = res.prospects.map(C.normalize);
+    settings = Object.assign({}, C.DEFAULT_SETTINGS, res.settings);
+    render();
+    loadRecent();
+    toast('Sauvegarde restaurée.');
   });
 
   // ---------- Événements ----------
@@ -347,24 +454,24 @@
     renderTable(withStatus());
   }));
 
-  function markToday(id, fn) {
-    const p = prospects.find((x) => x.id === id);
-    if (!p) return;
-    fn(p);
-    p.updatedAt = C.today();
-    save();
+  async function markToday(id, changes, msg, btn) {
+    const res = await run(() => api('PUT', `prospects/${encodeURIComponent(id)}`, changes), btn);
+    if (!res) return;
+    upsertLocal(res.prospect);
     render();
+    loadRecent();
+    toast(msg);
   }
 
   document.addEventListener('click', (e) => {
     const t = e.target.closest('[data-edit],[data-followup],[data-sent],[data-status],#table tbody tr');
     if (!t) return;
     if (t.dataset.followup) {
-      markToday(t.dataset.followup, (p) => { p.followUps = (p.followUps || 0) + 1; p.lastFollowUpAt = C.today(); });
-      toast('Relance enregistrée.');
+      const p = prospects.find((x) => x.id === t.dataset.followup);
+      if (p) markToday(p.id, { followUps: (p.followUps || 0) + 1, lastFollowUpAt: C.today() }, 'Relance enregistrée.', t);
     } else if (t.dataset.sent) {
-      markToday(t.dataset.sent, (p) => { p.messageSentAt = C.today(); p.channel = p.channel || 'LinkedIn'; });
-      toast('Message marqué envoyé.');
+      const p = prospects.find((x) => x.id === t.dataset.sent);
+      if (p) markToday(p.id, { messageSentAt: C.today(), channel: p.channel || 'LinkedIn' }, 'Message marqué envoyé.', t);
     } else if (t.dataset.status) {
       $('#f-status').value = t.dataset.status;
       renderTable(withStatus());
@@ -377,10 +484,131 @@
     }
   });
 
+  // ---------- Thème ----------
+  const THEMES = [['auto', 'auto'], ['light', 'clair'], ['dark', 'sombre']];
+  function currentTheme() {
+    return document.documentElement.dataset.theme || 'auto';
+  }
+  function applyTheme(t) {
+    if (t === 'auto') delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = t;
+    try {
+      if (t === 'auto') localStorage.removeItem(THEME_KEY);
+      else localStorage.setItem(THEME_KEY, t);
+    } catch (e) { /* préférence non mémorisée */ }
+    $('#btn-theme').textContent = 'Thème : ' + THEMES.find(([k]) => k === t)[1];
+  }
+  $('#btn-theme').addEventListener('click', () => {
+    const i = THEMES.findIndex(([k]) => k === currentTheme());
+    applyTheme(THEMES[(i + 1) % THEMES.length][0]);
+  });
+
+  // ---------- Connexion ----------
+  function showLogin(msg) {
+    $('#loading').hidden = true;
+    $('#app').hidden = true;
+    $('#login').hidden = false;
+    $$('dialog[open]').forEach((d) => d.close());
+    if (msg) $('#login-msg').textContent = msg;
+    $('#form-login').elements.password.focus();
+  }
+
+  $('#form-login').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const err = $('#login-error');
+    const btn = $('button[type=submit]', e.target);
+    err.hidden = true;
+    btn.disabled = true;
+    try {
+      await api('POST', 'login', { password: e.target.elements.password.value });
+      e.target.reset();
+      await start();
+    } catch (ex) {
+      err.textContent = ex.message;
+      err.hidden = false;
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  $('#btn-logout').addEventListener('click', async () => {
+    await run(() => api('POST', 'logout', {}));
+    prospects = [];
+    showLogin('Vous êtes déconnecté.');
+  });
+
+  // ---------- Données de l'ancienne version (navigateur) ----------
+  function legacyData() {
+    try {
+      const list = JSON.parse(localStorage.getItem(LEGACY_KEY) || '[]');
+      return Array.isArray(list) ? list.filter((p) => p && p.company) : [];
+    } catch (e) {
+      return [];
+    }
+  }
+  function checkLegacy() {
+    const list = legacyData();
+    $('#local-banner').hidden = !list.length;
+    $('#local-banner-text').textContent =
+      `${list.length} société(s) sont encore enregistrées dans ce navigateur (ancienne version). Les importer dans la base partagée ?`;
+  }
+  function forgetLegacy() {
+    try { localStorage.removeItem(LEGACY_KEY); } catch (e) { /* rien à nettoyer */ }
+    checkLegacy();
+  }
+  $('#btn-local-import').addEventListener('click', async () => {
+    const res = await importList(legacyData().map(C.normalize), $('#btn-local-import'));
+    if (!res) return;
+    forgetLegacy();
+    toast(`Import : ${res.added} ajoutée(s), ${res.updated} mise(s) à jour.`);
+  });
+  $('#btn-local-dismiss').addEventListener('click', () => {
+    if (confirm('Supprimer définitivement ces données du navigateur sans les importer ?')) forgetLegacy();
+  });
+
   // ---------- Initialisation ----------
+  async function start() {
+    try {
+      await loadAll();
+    } catch (e) {
+      if (e instanceof AuthError) return;
+      $('#loading').textContent = e.message;
+      $('#loading').hidden = false;
+      return;
+    }
+    $('#loading').hidden = true;
+    $('#login').hidden = true;
+    $('#app').hidden = false;
+    $('#btn-logout').hidden = !!start.authDisabled;
+    checkLegacy();
+    started = true;
+  }
+
+  // Rafraîchit les données (autre onglet, autre poste) quand on revient sur la page, et chaque minute.
+  async function refresh() {
+    if (!started || $('#app').hidden || document.hidden || $$('dialog[open]').length) return;
+    try {
+      await loadAll();
+    } catch (e) { /* nouvel essai au prochain rafraîchissement */ }
+  }
+  document.addEventListener('visibilitychange', refresh);
+  setInterval(refresh, 60000);
+
   $$('select[data-options]', form).forEach((s) => { s.innerHTML = options(C[s.dataset.options], !('noEmpty' in s.dataset)); });
   $('#f-status').innerHTML += options(C.STATUSES);
   $('#f-signal').innerHTML += options(C.SIGNAL_TYPES);
   $('#f-response').innerHTML += options(C.RESPONSES);
-  render();
+  applyTheme(currentTheme());
+
+  (async function init() {
+    try {
+      const s = await api('GET', 'session');
+      start.authDisabled = s.authDisabled;
+      if (!s.configured) return showLogin('Mot de passe non configuré : ajoutez APP_PASSWORD dans les variables d\'environnement Vercel.');
+      if (!s.authenticated) return showLogin();
+      await start();
+    } catch (e) {
+      $('#loading').textContent = e.message;
+    }
+  })();
 })();

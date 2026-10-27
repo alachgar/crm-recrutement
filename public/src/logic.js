@@ -309,7 +309,7 @@
     let updated = 0;
     for (const p of incoming) {
       const idx = out.findIndex((e) => e.id === p.id || key(e) === key(p));
-      if (idx >= 0) { out[idx] = normalize(Object.assign({}, out[idx], p, { id: out[idx].id })); updated++; }
+      if (idx >= 0) { out[idx] = normalize(Object.assign({}, out[idx], p, { id: out[idx].id, company: out[idx].company })); updated++; }
       else { out.push(normalize(p)); added++; }
     }
     return { list: out, added, updated };
