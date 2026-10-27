@@ -3,14 +3,40 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CRM Prospection ESN</title>
+  <title>CRM Prospection ESN — Nova Tech Trust</title>
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" type="image/png" href="assets/logo-symbole.png">
+  <script src="src/theme.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&display=swap">
   <link rel="stylesheet" href="src/styles.css">
 </head>
 <body>
-  <header class="topbar">
-    <div>
+  <!-- Connexion -->
+  <section id="login" class="login" hidden>
+    <form id="form-login" class="login-card">
+      <img class="login-logo" src="assets/logo-symbole.png" alt="">
+      <p class="brand-name">Nova Tech Trust</p>
       <h1>CRM Prospection ESN</h1>
-      <p class="subtitle">Diagnostic de recrutement — suivi société · taille vérifiée · signal · message · réponse</p>
+      <p class="muted" id="login-msg">Accès réservé. Saisissez le mot de passe de l'équipe.</p>
+      <label class="login-field">Mot de passe<input type="password" name="password" autocomplete="current-password" required autofocus></label>
+      <button type="submit" class="primary">Se connecter</button>
+      <p class="login-error" id="login-error" role="alert" hidden></p>
+    </form>
+  </section>
+
+  <p id="loading" class="loading">Chargement…</p>
+
+  <div id="app" hidden>
+  <header class="topbar">
+    <div class="brand">
+      <img class="brand-logo" src="assets/logo-symbole.png" alt="Nova Tech Trust">
+      <div>
+        <p class="brand-name">Nova Tech Trust</p>
+        <h1>CRM Prospection ESN</h1>
+        <p class="subtitle">Diagnostic de recrutement — suivi société · taille vérifiée · signal · message · réponse</p>
+      </div>
     </div>
     <div class="actions">
       <button id="btn-add" class="primary">+ Nouvelle société</button>
@@ -19,10 +45,19 @@
       <button id="btn-backup" title="Sauvegarde complète (JSON)">Sauvegarde</button>
       <label class="button" title="Restaurer une sauvegarde JSON">Restaurer<input type="file" id="file-restore" accept=".json,application/json" hidden></label>
       <button id="btn-settings">Réglages</button>
+      <button id="btn-theme" title="Changer de thème">Thème : auto</button>
+      <button id="btn-logout" title="Se déconnecter">Déconnexion</button>
     </div>
   </header>
 
   <main>
+    <div id="local-banner" class="banner" hidden>
+      <span id="local-banner-text"></span>
+      <span class="spacer"></span>
+      <button id="btn-local-import" class="primary">Importer dans la base</button>
+      <button id="btn-local-dismiss">Ignorer</button>
+    </div>
+
     <section class="kpis" id="kpis"></section>
 
     <section class="grid-2">
@@ -45,6 +80,11 @@
         <h2>Réponse par canal</h2>
         <div id="by-channel"></div>
       </div>
+    </section>
+
+    <section class="card">
+      <h2>Activité récente</h2>
+      <div id="recent"></div>
     </section>
 
     <section class="card">
@@ -139,6 +179,15 @@
         <label class="wide"><textarea name="notes" rows="2"></textarea></label>
       </fieldset>
 
+      <fieldset id="history" class="history" hidden>
+        <legend>Historique</legend>
+        <div class="note-add">
+          <input id="note-text" placeholder="Ajouter une note (appel, échange, idée…)" maxlength="2000">
+          <button type="button" id="btn-note">Ajouter</button>
+        </div>
+        <ul id="history-list" class="timeline"></ul>
+      </fieldset>
+
       <div class="dlg-actions">
         <button type="button" id="btn-delete" class="danger">Supprimer</button>
         <span class="spacer"></span>
@@ -147,6 +196,7 @@
       </div>
     </form>
   </dialog>
+  </div>
 
   <!-- Réglages -->
   <dialog id="dlg-settings">

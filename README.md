@@ -1,7 +1,8 @@
-# CRM Prospection ESN — Diagnostic de recrutement
+# CRM Prospection ESN — Nova Tech Trust
 
-Petit CRM web, sans serveur ni dépendance, pour piloter la prospection des ESN
-auxquelles proposer un **diagnostic de recrutement**.
+CRM web aux couleurs de **Nova Tech Trust** pour piloter la prospection des ESN
+auxquelles proposer un **diagnostic de recrutement**. Données dans une base
+**Postgres** partagée, accès protégé par mot de passe, déployable sur **Vercel**.
 
 Chaque société est suivie selon 5 étapes :
 
@@ -40,33 +41,69 @@ et le nombre max. de relances (2) se règlent dans **Réglages**.
   et quelles accroches convertissent le mieux.
 - Tableau filtrable / triable, boutons rapides « Envoyé » et « + Relance ».
 
-## Utilisation
+- **Historique** de chaque société (création, taille vérifiée, signal, message, relances,
+  réponse) enregistré automatiquement, plus des notes libres datées.
+- **Activité récente** sur le tableau de bord, toutes sociétés confondues.
+- Thème **clair / sombre / auto** (bouton « Thème »), affichage mobile.
 
-Ouvrir `index.html` dans un navigateur suffit. Pour charger les données de démo
-(Réglages ▸ « Charger des données de démo »), passer par un serveur local :
+## Déployer sur Vercel
+
+1. **Importer le dépôt** dans Vercel (*Add New ▸ Project*). Aucun réglage de build :
+   `vercel.json` publie `public/` et l'API `api/index.js`.
+2. **Ajouter la base** : dans le projet Vercel, *Storage ▸ Create Database ▸ Neon (Postgres)*
+   et la connecter au projet. Vercel ajoute la variable `DATABASE_URL`.
+   Les tables sont créées automatiquement au premier appel.
+3. **Définir le mot de passe** : *Settings ▸ Environment Variables*, ajouter
+   `APP_PASSWORD` (long et unique, partagé avec l'équipe).
+4. **Redéployer** (*Deployments ▸ Redeploy*) pour prendre en compte les variables.
+
+| Variable | Obligatoire | Rôle |
+|----------|-------------|------|
+| `DATABASE_URL` (ou `POSTGRES_URL`) | oui | Connexion Postgres Neon |
+| `APP_PASSWORD` | oui | Mot de passe d'accès au CRM |
+| `SESSION_SECRET` | non | Clé de signature des sessions (par défaut dérivée du mot de passe : changer le mot de passe déconnecte tout le monde) |
+
+Sécurité : session de 30 jours en cookie `HttpOnly` signé, 10 essais de mot de passe
+max. par IP et par 15 minutes, en-têtes de sécurité (CSP, anti-iframe) dans `vercel.json`.
+
+## Développement local
 
 ```bash
-npm start            # http://localhost:8080
-# ou : python3 -m http.server 8080
+npm install
+npm run dev          # http://localhost:3000
 ```
+
+Sans `DATABASE_URL`, les données sont stockées dans `.data/pglite` (Postgres embarqué,
+aucune installation) et l'accès est ouvert sans mot de passe. Pour tester comme en
+production : `APP_PASSWORD=… DATABASE_URL=… npm run dev` (voir `.env.example`).
 
 ### Données
 
-- Les données sont stockées **dans le navigateur** (localStorage) : elles restent sur le poste.
+- Stockées dans la base : les mêmes données sur tous les postes. La page se rafraîchit
+  quand on y revient et toutes les minutes.
 - **Exporter CSV** : fichier `;` encodé UTF-8, s'ouvre directement dans Excel.
-- **Importer CSV** : reconnaît les en-têtes de l'export (voir `data/modele-import.csv`) ;
+- **Importer CSV** : reconnaît les en-têtes de l'export (voir `public/data/modele-import.csv`) ;
   une société déjà présente (même ID ou même nom) est mise à jour, sinon ajoutée.
-- **Sauvegarde / Restaurer** : export JSON complet (données + réglages), à faire régulièrement.
+- **Sauvegarde / Restaurer** : export JSON complet (sociétés, historique, réglages).
+  La restauration remplace toutes les données de la base.
+- Données de l'ancienne version (stockées dans le navigateur) : un bandeau propose de
+  les importer dans la base à la première connexion.
 
 ## Structure
 
 ```
-index.html          interface
-src/logic.js        logique métier (statuts, relances, statistiques, CSV) — testée
-src/app.js          rendu et interactions
-src/styles.css      styles (thème clair/sombre)
-data/               modèle d'import et données de démo (fictives)
-test/               tests (node --test)
+public/index.html       interface
+public/src/logic.js     logique métier (statuts, relances, statistiques, CSV), partagée navigateur/serveur
+public/src/app.js       rendu, interactions, appels à l'API
+public/src/styles.css   charte Nova Tech Trust (thèmes clair et sombre)
+public/data/            modèle d'import et données de démo (fictives)
+api/index.js            fonction Vercel : toutes les routes /api/*
+lib/router.js           routes de l'API
+lib/prospects.js        schéma SQL, lecture/écriture, historique
+lib/auth.js             mot de passe, session, limitation des essais
+lib/db.js               connexion Neon (production) ou PGlite (local, tests)
+server.js               serveur de développement local
+test/                   tests (node --test), dont l'API sur une base en mémoire
 ```
 
 ## Tests
@@ -74,3 +111,17 @@ test/               tests (node --test)
 ```bash
 npm test
 ```
+
+## Charte graphique — Nova Tech Trust
+
+Les couleurs sont définies une seule fois, en variables CSS en tête de `public/src/styles.css` (thème clair et sombre).
+
+| Rôle | Couleur |
+|------|---------|
+| Fond des pages | `#FAF9F6` (blanc chaud) |
+| Fond sombre (mode sombre) | `#252525` |
+| Texte | `#393837` (graphite) |
+| Accent / appels à l'action | `#B37B4A` (cuivre moyen) |
+
+Police : **Montserrat** (Google Fonts, avec repli sur la police système hors ligne).
+Logos dans `public/assets/` : `logo-symbole.png` (en-tête, favicon) et `logo-nova-tech-trust.png` (logo complet).
